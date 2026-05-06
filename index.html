@@ -98,20 +98,23 @@ micBtn.addEventListener('click', () => {
   if (!micActive) startMic().catch(e => { statusEl.textContent = 'MIC DENIED'; });
 });
 
-// Lub-dub heartbeat at 68 BPM — two quick pulses then rest
+// Smooth lub-dub heartbeat at 68 BPM
+let hbSmoothed = 0;
 function heartbeatPulse() {
   const period = 60 / 68;
   const phase = (t % period) / period;
-  const lub = Math.exp(-phase * 22) * Math.max(0, 1 - phase * 18);
-  const dubPhase = Math.max(0, phase - 0.18);
-  const dub = 0.55 * Math.exp(-dubPhase * 28) * Math.max(0, 1 - dubPhase * 22);
-  return Math.max(0, lub + dub);
+  const lub = Math.exp(-phase * 14) * Math.max(0, 1 - phase * 10);
+  const dubPhase = Math.max(0, phase - 0.2);
+  const dub = 0.4 * Math.exp(-dubPhase * 18) * Math.max(0, 1 - dubPhase * 14);
+  const raw = Math.max(0, lub + dub);
+  hbSmoothed += (raw - hbSmoothed) * 0.12; // ease toward raw value
+  return hbSmoothed;
 }
 
 function getAudioData() {
   if (!micActive || !analyser) {
     const hb = heartbeatPulse();
-    return { waveform: null, freq: null, volume: hb * 0.4, bass: hb * 0.7, mid: hb * 0.15, treble: 0 };
+    return { waveform: null, freq: null, volume: hb * 0.2, bass: hb * 0.35, mid: hb * 0.08, treble: 0 };
   }
   analyser.getByteTimeDomainData(dataArray);
   analyser.getByteFrequencyData(freqArray);
@@ -277,21 +280,23 @@ function drawText(volume, bass) {
   ctx.translate(W / 2, H / 2);
   ctx.scale(pulse, pulse);
 
+  const fontSize = Math.round(Math.min(W * 0.16, H * 0.2));
+
   // Glow
-  ctx.font = `bold ${Math.round(W * 0.22)}px 'Bebas Neue', sans-serif`;
+  ctx.font = `bold ${fontSize}px 'Bebas Neue', sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = `rgba(255, 80, 150, ${0.4 + bass * 0.5})`;
   ctx.shadowBlur = 40 + bass * 60;
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.fillText('THE', 0, -H * 0.095);
-  ctx.fillText('HEART', 0, H * 0.07);
+  ctx.fillText('THE', 0, -H * 0.08);
+  ctx.fillText('HEART', 0, H * 0.06);
 
   // Crisp white
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('THE', 0, -H * 0.095);
-  ctx.fillText('HEART', 0, H * 0.07);
+  ctx.fillText('THE', 0, -H * 0.08);
+  ctx.fillText('HEART', 0, H * 0.06);
 
   ctx.restore();
 }
