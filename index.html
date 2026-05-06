@@ -197,33 +197,8 @@ function sphereColor(theta, phi, t, bass, mid) {
 
 function drawSphere(cx, cy, radius, bass, mid, treble, volume) {
   const sorted = dots.map(d => {
-    // Smoother organic shape — key art is mostly oval with gentle surface waves
-    const baseShape = 1
-      + 0.14 * Math.sin(d.theta) * Math.cos(2 * d.phi)          // subtle side lobes
-      + 0.08 * Math.sin(2 * d.theta) * Math.sin(2 * d.phi)      // gentle surface wave
-      + 0.05 * Math.cos(d.theta * 5) * Math.cos(d.phi * 3);     // fine mesh texture
-
-    const perturbR = radius * baseShape
-      * (1 + bass * 0.32 * Math.sin(d.theta * 3 + t * 2 + d.phase)
-           + mid * 0.18 * Math.cos(d.phi * 2 + t * 1.5));
-    const noiseR = perturbR * (1 + 0.05 * Math.sin(d.theta * 6 + t * d.speed));
-
-    const x3 = noiseR * Math.sin(d.theta) * Math.cos(d.phi + t * 0.12);
-    const y3 = noiseR * Math.cos(d.theta) * 1.28;               // vertical elongation to match key art
-    const z3 = noiseR * Math.sin(d.theta) * Math.sin(d.phi + t * 0.12);
-
-    // Simple rotation around Y
-    const cosY = Math.cos(t * 0.15);
-    const sinY = Math.sin(t * 0.15);
-    const rx = x3 * cosY - z3 * sinY;
-    const rz = x3 * sinY + z3 * cosY;
-
-    const scale = 600 / (600 - rz);
-    const sx = cx + rx * scale;
-    const sy = cy - y3 * scale;
-    const depth = (rz + noiseR) / (2 * noiseR); // 0 back, 1 front
-
-    return { sx, sy, depth, theta: d.theta, phi: d.phi, r: noiseR };
+    const p = projectDot(d, radius, bass, mid);
+    return { sx: cx + p.sx, sy: cy + p.sy, depth: p.depth, theta: d.theta, phi: d.phi };
   });
 
   sorted.sort((a, b) => a.depth - b.depth);
@@ -242,72 +217,84 @@ function drawSphere(cx, cy, radius, bass, mid, treble, volume) {
   ctx.globalAlpha = 1;
 }
 
-function drawMesh(cx, cy, radius, bass, mid, treble, volume) {
+// Shared projection — used by both mesh and particle modes
+function projectDot(d, radius, bass, mid) {
   const cosY = Math.cos(t * 0.15), sinY = Math.sin(t * 0.15);
 
-  // Project entire grid to screen space
+  // Heart-suggestive shape: two lobes at top, tapered bottom, gentle indentation
+  const topBulge  = Math.exp(-8 * Math.pow(d.theta - 0.55, 2)); // two-lobe crown
+  const twinLobes = 0.22 * topBulge * Math.cos(2 * d.phi);
+  const taper     = -0.12 * Math.cos(d.theta);                  // wider equator, narrowed base
+  const cleft     = -0.07 * Math.exp(-12 * d.theta * d.theta) * (1 - Math.abs(Math.cos(d.phi))); // top-center dip
+  const ripple    = 0.04 * Math.sin(3 * d.theta) * Math.sin(3 * d.phi);
+
+  const baseShape = 1 + twinLobes + taper + cleft + ripple;
+
+  const perturbR = radius * baseShape
+    * (1 + bass * 0.28 * Math.sin(d.theta * 3 + t * 2 + d.phase)
+         + mid  * 0.14 * Math.cos(d.phi  * 2 + t * 1.5));
+  const r = perturbR * (1 + 0.04 * Math.sin(d.theta * 6 + t * d.speed));
+
+  const x3 = r * Math.sin(d.theta) * Math.cos(d.phi + t * 0.12);
+  const y3 = r * Math.cos(d.theta) * 1.3;
+  const z3 = r * Math.sin(d.theta) * Math.sin(d.phi + t * 0.12);
+
+  const rx = x3 * cosY - z3 * sinY;
+  const rz = x3 * sinY + z3 * cosY;
+  const sc = 600 / (600 - rz);
+
+  return { sx: rx * sc, sy: -y3 * sc, depth: (rz + r) / (2 * r) };
+}
+
+function drawMesh(cx, cy, radius, bass, mid, treble, volume) {
+  // Project all grid points — O(n) no sort, no shadow
   const proj = grid.map(band => band.map(d => {
-    const baseShape = 1
-      + 0.10 * Math.sin(d.theta) * Math.cos(2 * d.phi)
-      + 0.06 * Math.sin(2 * d.theta) * Math.sin(2 * d.phi)
-      + 0.04 * Math.cos(d.theta * 5) * Math.cos(d.phi * 3);
-
-    const perturbR = radius * baseShape
-      * (1 + bass * 0.28 * Math.sin(d.theta * 3 + t * 2 + d.phase)
-           + mid * 0.14 * Math.cos(d.phi * 2 + t * 1.5));
-    const r = perturbR * (1 + 0.04 * Math.sin(d.theta * 6 + t * d.speed));
-
-    const x3 = r * Math.sin(d.theta) * Math.cos(d.phi + t * 0.12);
-    const y3 = r * Math.cos(d.theta) * 1.28;
-    const z3 = r * Math.sin(d.theta) * Math.sin(d.phi + t * 0.12);
-
-    const rx = x3 * cosY - z3 * sinY;
-    const rz = x3 * sinY + z3 * cosY;
-    const sc = 600 / (600 - rz);
-
-    return {
-      sx: cx + rx * sc,
-      sy: cy - y3 * sc,
-      depth: (rz + r) / (2 * r),
-      theta: d.theta,
-      phi: d.phi,
-    };
+    const p = projectDot(d, radius, bass, mid);
+    return { sx: cx + p.sx, sy: cy + p.sy, depth: p.depth, theta: d.theta, phi: d.phi };
   }));
 
-  // Build line segments (lat rings + lon meridians)
-  const segs = [];
+  // — Latitude rings: one closed polyline per ring (56 draw calls total)
   for (let i = 0; i <= LAT_BANDS; i++) {
-    for (let j = 0; j < LON_SEGS; j++) {
-      const a = proj[i][j], b = proj[i][(j + 1) % LON_SEGS];
-      segs.push({ a, b, depth: (a.depth + b.depth) * 0.5 });
-    }
-  }
-  for (let i = 0; i < LAT_BANDS; i++) {
-    for (let j = 0; j < LON_SEGS; j++) {
-      const a = proj[i][j], b = proj[i + 1][j];
-      segs.push({ a, b, depth: (a.depth + b.depth) * 0.5 });
-    }
-  }
+    const ring    = proj[i];
+    const avgD    = ring.reduce((s, p) => s + p.depth, 0) / LON_SEGS;
+    const theta   = grid[i][0].theta;
+    const col     = sphereColor(theta, 0, t, bass, mid);
 
-  segs.sort((a, b) => a.depth - b.depth);
-
-  for (const seg of segs) {
-    const { a, b } = seg;
-    const alpha = 0.08 + seg.depth * 0.65;
-    const lw = 0.3 + seg.depth * 0.55;
-    const col = sphereColor((a.theta + b.theta) * 0.5, (a.phi + b.phi) * 0.5, t, bass, mid);
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = col;
-    ctx.lineWidth = lw;
-    ctx.shadowColor = col;
-    ctx.shadowBlur = 1 + seg.depth * 5;
+    // Glow pass
+    ctx.globalAlpha = 0.06 + avgD * 0.18;
+    ctx.strokeStyle  = col;
+    ctx.lineWidth    = 1.8 + avgD * 1.6;
     ctx.beginPath();
-    ctx.moveTo(a.sx, a.sy);
-    ctx.lineTo(b.sx, b.sy);
+    ring.forEach((p, j) => j === 0 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy));
+    ctx.closePath();
+    ctx.stroke();
+
+    // Crisp pass
+    ctx.globalAlpha = 0.18 + avgD * 0.65;
+    ctx.lineWidth   = 0.4 + avgD * 0.5;
+    ctx.beginPath();
+    ring.forEach((p, j) => j === 0 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy));
+    ctx.closePath();
     ctx.stroke();
   }
+
+  // — Meridians: one open polyline per meridian (80 draw calls total)
+  for (let j = 0; j < LON_SEGS; j++) {
+    const col   = sphereColor(Math.PI / 2, grid[0][j].phi, t, bass, mid);
+    const avgD  = grid.reduce((s, _, i) => s + proj[i][j].depth, 0) / (LAT_BANDS + 1);
+
+    ctx.globalAlpha = 0.08 + avgD * 0.35;
+    ctx.strokeStyle  = col;
+    ctx.lineWidth    = 0.3 + avgD * 0.4;
+    ctx.beginPath();
+    for (let i = 0; i <= LAT_BANDS; i++) {
+      const p = proj[i][j];
+      i === 0 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy);
+    }
+    ctx.stroke();
+  }
+
   ctx.globalAlpha = 1;
-  ctx.shadowBlur = 0;
 }
 
 function drawWaveform(waveform, volume, bass) {
