@@ -135,12 +135,12 @@ function getAudioData() {
   return { waveform: dataArray, freq: freqArray, volume, bass, mid, treble };
 }
 
-// Lat/long grid — creates visible surface bands like the reference
+// Lat/long grid — finer mesh to match key art
 const dots = [];
-const LAT_BANDS = 48;
+const LAT_BANDS = 60;
 for (let i = 1; i < LAT_BANDS; i++) {
   const theta = (i / LAT_BANDS) * Math.PI;
-  const ringCount = Math.max(4, Math.round(Math.sin(theta) * 96));
+  const ringCount = Math.max(4, Math.round(Math.sin(theta) * 120));
   for (let j = 0; j < ringCount; j++) {
     const phi = (j / ringCount) * Math.PI * 2;
     dots.push({ theta, phi, phase: Math.random() * Math.PI * 2, speed: 0.3 + Math.random() * 0.7 });
@@ -149,35 +149,36 @@ for (let i = 1; i < LAT_BANDS; i++) {
 
 let t = 0;
 
-// Color helpers
+// Colors matched to key art: orange-yellow top → coral/hot-pink mid → deep purple bottom
 function sphereColor(theta, phi, t, bass, mid) {
-  // Map position to gradient: orange top → pink middle → purple/blue bottom+sides
-  const ny = Math.cos(theta); // -1 to 1
+  const ny = Math.cos(theta);
   const nx = Math.sin(theta) * Math.cos(phi);
   const nz = Math.sin(theta) * Math.sin(phi);
 
-  // Animated hue shift based on audio
-  const audioShift = (bass * 30 + mid * 20);
-  const angle = (Math.atan2(ny + 0.5, Math.sqrt(nx*nx + nz*nz)) / Math.PI + 0.5 + t * 0.04) % 1;
+  const audioShift = bass * 18 + mid * 10;
+  const angle = (Math.atan2(ny + 0.3, Math.sqrt(nx*nx + nz*nz)) / Math.PI + 0.5 + t * 0.035) % 1;
 
-  // Color stops: orange → red/pink → magenta → purple → deep blue
   let r, g, b;
-  if (angle < 0.25) {
-    // orange to red
-    const f = angle / 0.25;
-    r = 255; g = Math.round(165 - f * 130); b = Math.round(f * 60);
-  } else if (angle < 0.5) {
-    // red to magenta/pink
-    const f = (angle - 0.25) / 0.25;
-    r = 255; g = Math.round(35 + f * 10); b = Math.round(60 + f * 140);
+  if (angle < 0.2) {
+    // orange-yellow → orange
+    const f = angle / 0.2;
+    r = 255; g = Math.round(155 - f * 85); b = 0;
+  } else if (angle < 0.38) {
+    // orange → hot coral/red
+    const f = (angle - 0.2) / 0.18;
+    r = 255; g = Math.round(70 - f * 55); b = Math.round(f * 50);
+  } else if (angle < 0.55) {
+    // coral → hot pink/magenta
+    const f = (angle - 0.38) / 0.17;
+    r = 255; g = Math.round(15 - f * 5); b = Math.round(50 + f * 130);
   } else if (angle < 0.75) {
-    // magenta to purple
-    const f = (angle - 0.5) / 0.25;
-    r = Math.round(255 - f * 130); g = Math.round(45 - f * 15); b = Math.round(200 + f * 55);
+    // magenta → violet
+    const f = (angle - 0.55) / 0.2;
+    r = Math.round(255 - f * 160); g = Math.round(10); b = Math.round(180 + f * 60);
   } else {
-    // purple to deep indigo
+    // violet → deep indigo
     const f = (angle - 0.75) / 0.25;
-    r = Math.round(125 - f * 60); g = Math.round(30); b = Math.round(255 - f * 60);
+    r = Math.round(95 - f * 50); g = Math.round(10); b = Math.round(240 - f * 70);
   }
 
   r = Math.min(255, r + audioShift);
@@ -186,20 +187,19 @@ function sphereColor(theta, phi, t, bass, mid) {
 
 function drawSphere(cx, cy, radius, bass, mid, treble, volume) {
   const sorted = dots.map(d => {
-    // Organic base shape: two side lobes + vertical pinch = brain/heart abstraction
+    // Smoother organic shape — key art is mostly oval with gentle surface waves
     const baseShape = 1
-      + 0.28 * Math.sin(d.theta) * Math.cos(2 * d.phi)          // two side lobes
-      + 0.12 * Math.cos(2 * d.theta)                             // vertical flattening
-      + 0.09 * Math.sin(3 * d.theta) * Math.sin(3 * d.phi)      // surface ripple
-      + 0.06 * Math.cos(d.theta * 4) * Math.cos(d.phi * 2);     // fine texture
+      + 0.14 * Math.sin(d.theta) * Math.cos(2 * d.phi)          // subtle side lobes
+      + 0.08 * Math.sin(2 * d.theta) * Math.sin(2 * d.phi)      // gentle surface wave
+      + 0.05 * Math.cos(d.theta * 5) * Math.cos(d.phi * 3);     // fine mesh texture
 
     const perturbR = radius * baseShape
-      * (1 + bass * 0.38 * Math.sin(d.theta * 3 + t * 2 + d.phase)
-           + mid * 0.22 * Math.cos(d.phi * 2 + t * 1.5));
-    const noiseR = perturbR * (1 + 0.07 * Math.sin(d.theta * 6 + t * d.speed));
+      * (1 + bass * 0.32 * Math.sin(d.theta * 3 + t * 2 + d.phase)
+           + mid * 0.18 * Math.cos(d.phi * 2 + t * 1.5));
+    const noiseR = perturbR * (1 + 0.05 * Math.sin(d.theta * 6 + t * d.speed));
 
     const x3 = noiseR * Math.sin(d.theta) * Math.cos(d.phi + t * 0.12);
-    const y3 = noiseR * Math.cos(d.theta);
+    const y3 = noiseR * Math.cos(d.theta) * 1.28;               // vertical elongation to match key art
     const z3 = noiseR * Math.sin(d.theta) * Math.sin(d.phi + t * 0.12);
 
     // Simple rotation around Y
@@ -362,7 +362,7 @@ function draw() {
   ctx.fillStyle = 'rgba(0, 0, 0, 0.88)';
   ctx.fillRect(0, 0, W, H);
 
-  const radius = Math.min(W, H) * 0.28;
+  const radius = Math.min(W, H) * 0.33;
   drawSphere(W / 2, H / 2, radius, bass, mid, treble, volume);
   drawWaveform(waveform, volume, bass);
   drawText();
