@@ -274,30 +274,16 @@ function drawWaveform(waveform, volume, bass) {
   }
 }
 
-function drawText(volume, bass) {
-  const pulse = 1 + bass * 0.05 + volume * 0.03;
+function drawText() {
+  const fontSize = Math.round(Math.min(W * 0.16, H * 0.2));
   ctx.save();
   ctx.translate(W / 2, H / 2);
-  ctx.scale(pulse, pulse);
-
-  const fontSize = Math.round(Math.min(W * 0.16, H * 0.2));
-
-  // Glow
   ctx.font = `bold ${fontSize}px 'Bebas Neue', sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.shadowColor = `rgba(255, 80, 150, ${0.4 + bass * 0.5})`;
-  ctx.shadowBlur = 40 + bass * 60;
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.fillText('THE', 0, -H * 0.08);
-  ctx.fillText('HEART', 0, H * 0.06);
-
-  // Crisp white
-  ctx.shadowBlur = 0;
   ctx.fillStyle = '#ffffff';
   ctx.fillText('THE', 0, -H * 0.08);
   ctx.fillText('HEART', 0, H * 0.06);
-
   ctx.restore();
 }
 
@@ -379,7 +365,7 @@ function draw() {
   const radius = Math.min(W, H) * 0.28;
   drawSphere(W / 2, H / 2, radius, bass, mid, treble, volume);
   drawWaveform(waveform, volume, bass);
-  drawText(volume, bass);
+  drawText();
 }
 
 draw();
