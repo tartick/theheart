@@ -301,6 +301,20 @@ function drawText(volume, bass) {
   ctx.restore();
 }
 
+// FFmpeg lazy loader — single-threaded core, no COOP/COEP headers needed
+let _ffmpeg = null;
+async function getFFmpeg() {
+  if (_ffmpeg) return _ffmpeg;
+  const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
+  const { fetchFile } = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
+  const ff = new FFmpeg();
+  await ff.load({
+    coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+  });
+  _ffmpeg = { ff, fetchFile };
+  return _ffmpeg;
+}
+
 // Recording
 let mediaRecorder = null;
 let recordedChunks = [];
@@ -310,14 +324,34 @@ recBtn.addEventListener('click', () => {
   if (!isRecording) {
     recordedChunks = [];
     const stream = canvas.captureStream(30);
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9' : 'video/webm';
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'the-heart-visualizer.webm'; a.click();
-      URL.revokeObjectURL(url);
+    mediaRecorder.onstop = async () => {
+      statusEl.textContent = 'CONVERTING TO MP4…';
+      recBtn.disabled = true;
+      try {
+        const webmBlob = new Blob(recordedChunks, { type: 'video/webm' });
+        const { ff, fetchFile } = await getFFmpeg();
+        await ff.writeFile('in.webm', await fetchFile(webmBlob));
+        await ff.exec(['-i', 'in.webm', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-movflags', '+faststart', 'out.mp4']);
+        const data = await ff.readFile('out.mp4');
+        const mp4Blob = new Blob([data.buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(mp4Blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'the-heart-visualizer.mp4'; a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('MP4 conversion failed, downloading webm', err);
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'the-heart-visualizer.webm'; a.click();
+        URL.revokeObjectURL(url);
+      }
+      recBtn.disabled = false;
+      statusEl.textContent = micActive ? 'LISTENING' : 'CLICK "START MIC" TO BEGIN';
     };
     mediaRecorder.start();
     isRecording = true;
