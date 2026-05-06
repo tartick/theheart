@@ -427,7 +427,7 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   const radius = Math.min(W, H) * 0.27;
-  const cx = W / 2, cy = H / 2 - H * 0.04;
+  const cx = W / 2, cy = H / 2 + H * 0.05;
   if (mode === 'mesh') {
     drawMesh(cx, cy, radius, bass, mid, treble, volume);
   } else {
