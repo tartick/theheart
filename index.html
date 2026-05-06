@@ -56,15 +56,24 @@
 <canvas id="c"></canvas>
 <div id="ui">
   <button id="micBtn">START MIC</button>
-  <button id="recBtn">● REC</button>
+  <button id="modeBtn">◈ MESH</button>
+  <button id="recBtn" style="display:none">● REC</button>
 </div>
 
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const micBtn = document.getElementById('micBtn');
+const modeBtn = document.getElementById('modeBtn');
 const recBtn = document.getElementById('recBtn');
 const statusEl = document.getElementById('status');
+
+let mode = 'particle';
+modeBtn.addEventListener('click', () => {
+  mode = mode === 'particle' ? 'mesh' : 'particle';
+  modeBtn.textContent = mode === 'particle' ? '◈ MESH' : '◈ PARTICLE';
+  modeBtn.classList.toggle('active', mode === 'mesh');
+});
 
 let W, H;
 function resize() {
@@ -135,17 +144,18 @@ function getAudioData() {
   return { waveform: dataArray, freq: freqArray, volume, bass, mid, treble };
 }
 
-// Lat/long grid — finer mesh to match key art
-const dots = [];
-const LAT_BANDS = 60;
-for (let i = 1; i < LAT_BANDS; i++) {
+// Uniform lat/long grid — shared by both particle and mesh modes
+const LAT_BANDS = 55, LON_SEGS = 80;
+const grid = [];
+for (let i = 0; i <= LAT_BANDS; i++) {
   const theta = (i / LAT_BANDS) * Math.PI;
-  const ringCount = Math.max(4, Math.round(Math.sin(theta) * 120));
-  for (let j = 0; j < ringCount; j++) {
-    const phi = (j / ringCount) * Math.PI * 2;
-    dots.push({ theta, phi, phase: Math.random() * Math.PI * 2, speed: 0.3 + Math.random() * 0.7 });
+  grid[i] = [];
+  for (let j = 0; j < LON_SEGS; j++) {
+    const phi = (j / LON_SEGS) * Math.PI * 2;
+    grid[i][j] = { theta, phi, phase: Math.random() * Math.PI * 2, speed: 0.3 + Math.random() * 0.7 };
   }
 }
+const dots = grid.flat();
 
 let t = 0;
 
@@ -230,6 +240,74 @@ function drawSphere(cx, cy, radius, bass, mid, treble, volume) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+}
+
+function drawMesh(cx, cy, radius, bass, mid, treble, volume) {
+  const cosY = Math.cos(t * 0.15), sinY = Math.sin(t * 0.15);
+
+  // Project entire grid to screen space
+  const proj = grid.map(band => band.map(d => {
+    const baseShape = 1
+      + 0.10 * Math.sin(d.theta) * Math.cos(2 * d.phi)
+      + 0.06 * Math.sin(2 * d.theta) * Math.sin(2 * d.phi)
+      + 0.04 * Math.cos(d.theta * 5) * Math.cos(d.phi * 3);
+
+    const perturbR = radius * baseShape
+      * (1 + bass * 0.28 * Math.sin(d.theta * 3 + t * 2 + d.phase)
+           + mid * 0.14 * Math.cos(d.phi * 2 + t * 1.5));
+    const r = perturbR * (1 + 0.04 * Math.sin(d.theta * 6 + t * d.speed));
+
+    const x3 = r * Math.sin(d.theta) * Math.cos(d.phi + t * 0.12);
+    const y3 = r * Math.cos(d.theta) * 1.28;
+    const z3 = r * Math.sin(d.theta) * Math.sin(d.phi + t * 0.12);
+
+    const rx = x3 * cosY - z3 * sinY;
+    const rz = x3 * sinY + z3 * cosY;
+    const sc = 600 / (600 - rz);
+
+    return {
+      sx: cx + rx * sc,
+      sy: cy - y3 * sc,
+      depth: (rz + r) / (2 * r),
+      theta: d.theta,
+      phi: d.phi,
+    };
+  }));
+
+  // Build line segments (lat rings + lon meridians)
+  const segs = [];
+  for (let i = 0; i <= LAT_BANDS; i++) {
+    for (let j = 0; j < LON_SEGS; j++) {
+      const a = proj[i][j], b = proj[i][(j + 1) % LON_SEGS];
+      segs.push({ a, b, depth: (a.depth + b.depth) * 0.5 });
+    }
+  }
+  for (let i = 0; i < LAT_BANDS; i++) {
+    for (let j = 0; j < LON_SEGS; j++) {
+      const a = proj[i][j], b = proj[i + 1][j];
+      segs.push({ a, b, depth: (a.depth + b.depth) * 0.5 });
+    }
+  }
+
+  segs.sort((a, b) => a.depth - b.depth);
+
+  for (const seg of segs) {
+    const { a, b } = seg;
+    const alpha = 0.08 + seg.depth * 0.65;
+    const lw = 0.3 + seg.depth * 0.55;
+    const col = sphereColor((a.theta + b.theta) * 0.5, (a.phi + b.phi) * 0.5, t, bass, mid);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = lw;
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 1 + seg.depth * 5;
+    ctx.beginPath();
+    ctx.moveTo(a.sx, a.sy);
+    ctx.lineTo(b.sx, b.sy);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
 }
 
 function drawWaveform(waveform, volume, bass) {
@@ -363,7 +441,11 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
 
   const radius = Math.min(W, H) * 0.33;
-  drawSphere(W / 2, H / 2, radius, bass, mid, treble, volume);
+  if (mode === 'mesh') {
+    drawMesh(W / 2, H / 2, radius, bass, mid, treble, volume);
+  } else {
+    drawSphere(W / 2, H / 2, radius, bass, mid, treble, volume);
+  }
   drawWaveform(waveform, volume, bass);
   drawText();
 }
