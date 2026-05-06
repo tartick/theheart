@@ -119,14 +119,16 @@ function getAudioData() {
   return { waveform: dataArray, freq: freqArray, volume, bass, mid, treble };
 }
 
-// Dot sphere
-const NUM_DOTS = 1800;
+// Lat/long grid — creates visible surface bands like the reference
 const dots = [];
-for (let i = 0; i < NUM_DOTS; i++) {
-  // Fibonacci sphere distribution
-  const theta = Math.acos(1 - 2 * (i + 0.5) / NUM_DOTS);
-  const phi = Math.PI * (1 + Math.sqrt(5)) * i;
-  dots.push({ theta, phi, phase: Math.random() * Math.PI * 2, speed: 0.3 + Math.random() * 0.7 });
+const LAT_BANDS = 48;
+for (let i = 1; i < LAT_BANDS; i++) {
+  const theta = (i / LAT_BANDS) * Math.PI;
+  const ringCount = Math.max(4, Math.round(Math.sin(theta) * 96));
+  for (let j = 0; j < ringCount; j++) {
+    const phi = (j / ringCount) * Math.PI * 2;
+    dots.push({ theta, phi, phase: Math.random() * Math.PI * 2, speed: 0.3 + Math.random() * 0.7 });
+  }
 }
 
 let t = 0;
@@ -168,9 +170,17 @@ function sphereColor(theta, phi, t, bass, mid) {
 
 function drawSphere(cx, cy, radius, bass, mid, treble, volume) {
   const sorted = dots.map(d => {
-    const perturbR = radius * (1 + bass * 0.35 * Math.sin(d.theta * 3 + t * 2 + d.phase)
-                                 + mid * 0.2 * Math.cos(d.phi * 2 + t * 1.5));
-    const noiseR = perturbR * (1 + 0.08 * Math.sin(d.theta * 7 + t * d.speed));
+    // Organic base shape: two side lobes + vertical pinch = brain/heart abstraction
+    const baseShape = 1
+      + 0.28 * Math.sin(d.theta) * Math.cos(2 * d.phi)          // two side lobes
+      + 0.12 * Math.cos(2 * d.theta)                             // vertical flattening
+      + 0.09 * Math.sin(3 * d.theta) * Math.sin(3 * d.phi)      // surface ripple
+      + 0.06 * Math.cos(d.theta * 4) * Math.cos(d.phi * 2);     // fine texture
+
+    const perturbR = radius * baseShape
+      * (1 + bass * 0.38 * Math.sin(d.theta * 3 + t * 2 + d.phase)
+           + mid * 0.22 * Math.cos(d.phi * 2 + t * 1.5));
+    const noiseR = perturbR * (1 + 0.07 * Math.sin(d.theta * 6 + t * d.speed));
 
     const x3 = noiseR * Math.sin(d.theta) * Math.cos(d.phi + t * 0.12);
     const y3 = noiseR * Math.cos(d.theta);
