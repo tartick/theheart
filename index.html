@@ -221,13 +221,11 @@ function drawSphere(cx, cy, radius, bass, mid, treble, volume) {
 function projectDot(d, radius, bass, mid) {
   const cosY = Math.cos(t * 0.15), sinY = Math.sin(t * 0.15);
 
-  // Heart silhouette: wide rounded top, tapers to blunt apex at bottom
-  const taper  =  0.26 * Math.cos(d.theta);   // POSITIVE → fuller at north pole, narrows toward south
-  const crown  =  0.07 * Math.exp(-2.0 * Math.pow(d.theta - 0.48, 2)) * Math.cos(2 * d.phi); // soft twin dome
-  const cleft  = -0.025 * Math.exp(-15 * d.theta * d.theta); // faint crease at very top
-  const ripple =  0.025 * Math.sin(3 * d.theta) * Math.sin(3 * d.phi);
+  // Rounder orb matching updated key art — subtle surface texture only
+  const ripple = 0.06 * Math.sin(3 * d.theta) * Math.sin(3 * d.phi)
+               + 0.03 * Math.sin(5 * d.theta) * Math.cos(5 * d.phi);
 
-  const baseShape = 1 + taper + crown + cleft + ripple;
+  const baseShape = 1 + ripple;
 
   const perturbR = radius * baseShape
     * (1 + bass * 0.28 * Math.sin(d.theta * 3 + t * 2 + d.phase)
@@ -297,57 +295,84 @@ function drawMesh(cx, cy, radius, bass, mid, treble, volume) {
 }
 
 function drawWaveform(waveform, volume, bass) {
-  if (!waveform) {
-    // idle sine
-    ctx.save();
-    ctx.strokeStyle = 'rgba(140, 60, 220, 0.5)';
-    ctx.lineWidth = 2;
-    ctx.shadowColor = '#9933ff';
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    const y = H / 2;
-    for (let x = 0; x < W; x++) {
-      const v = Math.sin((x / W) * Math.PI * 6 + t * 2) * 15;
-      x === 0 ? ctx.moveTo(x, y + v) : ctx.lineTo(x, y + v);
+  const ROWS = 22;
+  const centerY = H / 2 + H * 0.05;
+  const amp = (waveform ? 70 + bass * 110 + volume * 50 : 38 + bass * 60) ;
+  const ribbonDepth = H * 0.13;
+
+  function waveY(phase, row) {
+    if (waveform) {
+      const idx = Math.floor(phase * (waveform.length - 1));
+      return (waveform[idx] - 128) / 128;
     }
-    ctx.stroke();
-    ctx.restore();
-    return;
+    // Procedural: layered sines for organic EKG-like idle shape
+    return Math.sin(phase * Math.PI * 10 + t * 1.8) * 0.45
+         + Math.sin(phase * Math.PI * 5  + t * 1.1 + row * 0.18) * 0.30
+         + Math.sin(phase * Math.PI * 20 + t * 2.6) * 0.15
+         + Math.sin(phase * Math.PI * 3  + t * 0.7) * 0.10;
   }
 
-  const sliceW = W / waveform.length;
-  const amp = 80 + bass * 120 + volume * 60;
-  const midY = H / 2;
+  const COLS = 180;
+  for (let row = 0; row < ROWS; row++) {
+    const rowT  = row / (ROWS - 1);                     // 0 (back) → 1 (front)
+    const z     = (rowT - 0.5) * ribbonDepth;
+    const persp = 550 / (550 - z);
+    const yBase = centerY + (rowT - 0.5) * ribbonDepth * 0.55 * persp;
+    const alpha = 0.07 + rowT * 0.55;
+    const lw    = 0.3 + rowT * 0.8;
 
-  // Draw mirrored top/bottom glow
-  for (let pass = 0; pass < 2; pass++) {
-    ctx.save();
-    ctx.strokeStyle = pass === 0 ? 'rgba(180, 80, 255, 0.35)' : 'rgba(220, 100, 255, 0.85)';
-    ctx.lineWidth = pass === 0 ? 6 : 2;
-    ctx.shadowColor = '#cc44ff';
-    ctx.shadowBlur = pass === 0 ? 25 : 10;
+    // Glow pass (thick, dim)
+    ctx.strokeStyle = `rgba(140, 40, 255, ${alpha * 0.4})`;
+    ctx.lineWidth   = lw + 2.5;
     ctx.beginPath();
-    for (let i = 0; i < waveform.length; i++) {
-      const v = (waveform[i] - 128) / 128;
-      const x = i * sliceW;
-      const y = midY + v * amp;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    for (let c = 0; c <= COLS; c++) {
+      const phase = c / COLS;
+      const x = phase * W;
+      const y = yBase + waveY(phase, row) * amp * persp;
+      c === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke();
-    ctx.restore();
+
+    // Crisp pass
+    ctx.strokeStyle = `rgba(175, 60, 255, ${alpha})`;
+    ctx.lineWidth   = lw;
+    ctx.beginPath();
+    for (let c = 0; c <= COLS; c++) {
+      const phase = c / COLS;
+      const x = phase * W;
+      const y = yBase + waveY(phase, row) * amp * persp;
+      c === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
   }
 }
 
 function drawText() {
-  const fontSize = Math.round(Math.min(W * 0.16, H * 0.2));
   ctx.save();
-  ctx.translate(W / 2, H / 2);
-  ctx.font = `bold ${fontSize}px 'Bebas Neue', sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText('THE', 0, -H * 0.08);
-  ctx.fillText('HEART', 0, H * 0.06);
+
+  // Hot pink gradient matching new key art
+  const gTHE = ctx.createLinearGradient(0, 0, 0, H * 0.22);
+  gTHE.addColorStop(0, '#FF1060');
+  gTHE.addColorStop(1, '#FF5020');
+
+  const gHEART = ctx.createLinearGradient(0, H * 0.78, 0, H);
+  gHEART.addColorStop(0, '#FF5020');
+  gHEART.addColorStop(1, '#FF1060');
+
+  // "THE" — top of screen
+  const szThe = Math.round(Math.min(W * 0.20, H * 0.16));
+  ctx.font = `bold ${szThe}px 'Bebas Neue', sans-serif`;
+  ctx.fillStyle = gTHE;
+  ctx.fillText('THE', W / 2, H * 0.11);
+
+  // "HEART" — bottom of screen
+  const szHeart = Math.round(Math.min(W * 0.26, H * 0.18));
+  ctx.font = `bold ${szHeart}px 'Bebas Neue', sans-serif`;
+  ctx.fillStyle = gHEART;
+  ctx.fillText('HEART', W / 2, H * 0.90);
+
   ctx.restore();
 }
 
