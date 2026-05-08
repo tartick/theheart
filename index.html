@@ -233,7 +233,7 @@ function projectDot(d, radius, bass, mid) {
   const r = perturbR * (1 + 0.04 * Math.sin(d.theta * 6 + t * d.speed));
 
   const x3 = r * Math.sin(d.theta) * Math.cos(d.phi + t * 0.12);
-  const y3 = r * Math.cos(d.theta) * 1.3;
+  const y3 = r * Math.cos(d.theta);
   const z3 = r * Math.sin(d.theta) * Math.sin(d.phi + t * 0.12);
 
   const rx = x3 * cosY - z3 * sinY;
